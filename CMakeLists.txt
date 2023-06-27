@@ -122,3 +122,5 @@ if(CREATE_TEST_TARGETS AND NOT WIN32)
 		add_subdirectory(test/libscap)
 	endif()
 endif()
+
+add_subdirectory(plugins/dns)
