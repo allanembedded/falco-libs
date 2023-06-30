@@ -95,7 +95,7 @@ extern "C" void plugin_destroy(ss_plugin_t* s)
 {
     delete ((plugin_state *) s);
 }
-
+/*
 extern "C" ss_instance_t* plugin_open(ss_plugin_t* s, const char* params, ss_plugin_rc* rc)
 {
     instance_state *ret = new instance_state();
@@ -152,6 +152,39 @@ extern "C" ss_plugin_rc plugin_next_batch(ss_plugin_t* s, ss_instance_t* i, uint
     istate->count--;
     return SS_PLUGIN_SUCCESS;
 }
+*/
+extern "C" const char* plugin_get_parse_event_sources()
+{
+    std::cerr << "Called plugin_get_parse_event_sources" << std::endl;
+    return "[\"syscall\"]";
+}
+
+extern "C" uint16_t* plugin_get_parse_event_types(uint32_t* num_types)
+{
+    std::cerr << "Called plugin_get_parse_event_types" << std::endl;
+    static uint16_t types[] = {
+	PPME_SOCKET_RECVFROM_X
+    };
+    *num_types = sizeof(types) / sizeof(uint16_t);
+    return &types[0];
+}
+
+extern "C" ss_plugin_rc plugin_parse_event(ss_plugin_t *s, const ss_plugin_event_input *ev, const ss_plugin_event_parse_input* in)
+{
+    // Hack for DNS parsing
+    std::cerr << "Called plugin_parse_event" << std::endl;
+    if (ev->evt->type == PPME_SOCKET_RECVFROM_X)
+    {
+        std::cerr << "Found recvfrom" << std::endl;
+        if (ev->evt->nparams != 3)
+        {
+            return SS_PLUGIN_SUCCESS;
+        }        
+    }
+
+    return SS_PLUGIN_SUCCESS;
+}
+
 
 extern "C" void get_plugin_api_sample_plugin_source(plugin_api& out)
 {
@@ -161,12 +194,17 @@ extern "C" void get_plugin_api_sample_plugin_source(plugin_api& out)
 	out.get_description = plugin_get_description;
 	out.get_contact = plugin_get_contact;
 	out.get_name = plugin_get_name;
-    out.get_id = plugin_get_id;
-    out.get_event_source = plugin_get_event_source;
 	out.get_last_error = plugin_get_last_error;
 	out.init = plugin_init;
 	out.destroy = plugin_destroy;
+
+    out.get_id = plugin_get_id;
+    /*out.get_event_source = plugin_get_event_source;
     out.open = plugin_open;
     out.close = plugin_close;
-    out.next_batch = plugin_next_batch;
+    out.next_batch = plugin_next_batch;*/
+
+    out.get_parse_event_sources = plugin_get_parse_event_sources;
+    out.get_parse_event_types = plugin_get_parse_event_types;
+    out.parse_event = plugin_parse_event;
 }
