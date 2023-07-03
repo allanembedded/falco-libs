@@ -40,7 +40,7 @@ const char* plugin_get_contact()
 
 uint32_t plugin_get_id()
 {
-	return 999;
+    return 999;
 }
 
 ss_plugin_t* plugin_init(const ss_plugin_init_input* in, ss_plugin_rc* rc)
