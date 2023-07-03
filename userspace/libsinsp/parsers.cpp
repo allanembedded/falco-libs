@@ -4345,6 +4345,18 @@ void sinsp_parser::parse_rw_exit(sinsp_evt *evt)
 				tupleparam = 3;
 			}
 
+			/*if(etype == PPME_SOCKET_RECVFROM_X)
+			{
+				std::cerr << "in parser" << std::endl;
+				std::cerr << "Event pointer:"  << evt->m_pevt << std::endl;
+				std::cerr << "Params:"  << evt->m_pevt->nparams << std::endl;
+				std::cerr << "Timestamp:"  << evt->m_pevt->ts << std::endl;
+				sinsp_evt_param* param = evt->get_param(tupleparam);
+				std::cerr << "Len 0: " << evt->get_param(0)->m_len << std::endl;
+				std::cerr << "Len 1: " << evt->get_param(1)->m_len << std::endl;
+				std::cerr << "Len 2: " << evt->get_param(2)->m_len << std::endl;
+				//std::cerr << "Len 3: " << evt->get_param(3)->m_len << std::endl;
+			}*/
 			if(tupleparam != -1 && (evt->m_fdinfo->m_name.length() == 0 || !evt->m_fdinfo->is_tcp_socket()))
 			{
 				//

@@ -25,7 +25,15 @@ limitations under the License.
 #include <engine/source_plugin/source_plugin_public.h>
 //#include "test_plugins.h"
 
+#include <arpa/inet.h>
+
 constexpr const char* s_evt_data = "hello world";
+
+struct thread_fdinfo_key_t
+{
+	uint64_t tid = 0;
+	uint64_t fd = 0;
+};
 
 /**
  * Example of plugin implementing only the event sourcing capability, which:
@@ -35,6 +43,10 @@ constexpr const char* s_evt_data = "hello world";
 typedef struct plugin_state
 {
     std::string lasterr;
+    ss_plugin_table_t* thread_table;
+    ss_plugin_table_t* thread_fdinfo_table;
+    ss_plugin_table_field_t* thread_fdinfo_l4proto;
+    
 } plugin_state;
 
 typedef struct instance_state
@@ -86,9 +98,44 @@ extern "C" const char* plugin_get_last_error(ss_plugin_t* s)
 
 extern "C" ss_plugin_t* plugin_init(const ss_plugin_init_input* in, ss_plugin_rc* rc)
 {
+    plugin_state* state = new plugin_state();
     std::cerr << "Called plugin_init" << std::endl;
     *rc = SS_PLUGIN_SUCCESS;
-    return new plugin_state();
+
+    state->thread_table = in->tables->get_table(
+        in->owner, "threads", ss_plugin_state_type::SS_PLUGIN_ST_INT64);
+    if (!state->thread_table)
+    {
+        *rc = SS_PLUGIN_FAILURE;
+        auto err = in->get_owner_last_error(in->owner);
+        state->lasterr = err ? err : "can't access thread table";
+        return state;
+    }
+
+    // get accessor for thread fdinfo table
+    state->thread_fdinfo_table = in->tables->get_table(
+        in->owner, "thread_fdinfo", ss_plugin_state_type::SS_PLUGIN_ST_UINT64);
+
+    if (!state->thread_fdinfo_table)
+    {
+        *rc = SS_PLUGIN_FAILURE;
+        auto err = in->get_owner_last_error(in->owner);
+        state->lasterr = err ? err : "can't access thread fdinfo table";
+        return state;
+    }
+
+    // get accessor for proc name in thread table entries
+    state->thread_fdinfo_l4proto = in->tables->fields.get_table_field(
+        state->thread_fdinfo_table, "l4proto", ss_plugin_state_type::SS_PLUGIN_ST_UINT8);
+    if (!state->thread_fdinfo_l4proto)
+    {
+        *rc = SS_PLUGIN_FAILURE;
+        auto err = in->get_owner_last_error(in->owner);
+        state->lasterr = err ? err : "can't access l4proto in fdinfo table";
+        return state;
+    }
+
+    return state;
 }
 
 extern "C" void plugin_destroy(ss_plugin_t* s)
@@ -163,23 +210,137 @@ extern "C" uint16_t* plugin_get_parse_event_types(uint32_t* num_types)
 {
     std::cerr << "Called plugin_get_parse_event_types" << std::endl;
     static uint16_t types[] = {
-	PPME_SOCKET_RECVFROM_X
+	PPME_SOCKET_RECVFROM_X,
+	PPME_SOCKET_RECVMSG_X
     };
     *num_types = sizeof(types) / sizeof(uint16_t);
     return &types[0];
 }
 
+struct __attribute__((__packed__)) ip_port {
+	uint8_t a;
+	uint8_t b;
+	uint8_t c;
+	uint8_t d;
+	uint16_t port;
+};
+
+struct __attribute__((__packed__)) socktuple {
+	uint8_t type;
+	ip_port src;
+	ip_port dst;
+};
+
+void have_dns_packet(uint8_t* buf, uint32_t len)
+{
+	std::cerr << "Have DNS packet with length " << len << std::endl;
+        unsigned short query_count = ntohs(((unsigned short*)buf)[2]);
+
+        std::cerr << "Query count: " << query_count << std::endl;
+        unsigned int index = 12;
+
+	if (query_count > 100)
+		return;
+
+        while(query_count)
+        {
+                std::string domain("");
+
+                while ((index < len) && (buf[index] != 0))
+                {
+                        if (index + (unsigned int)(buf[index]) > len)
+                                break;
+
+                        domain.append((const char*)&buf[index+1], (size_t)buf[index]);
+
+                        domain.append(".");
+                        index += buf[index]+1;
+                }
+                std::cerr << "Domain: " << domain << std::endl;
+
+                index++;
+                query_count--;
+        }
+}
+
 extern "C" ss_plugin_rc plugin_parse_event(ss_plugin_t *s, const ss_plugin_event_input *ev, const ss_plugin_event_parse_input* in)
 {
+    //ss_plugin_state_data tmp;
+
     // Hack for DNS parsing
-    std::cerr << "Called plugin_parse_event" << std::endl;
+    //std::cerr << "START PLUGIN" << std::endl;
+    if (ev->evt->type == PPME_SOCKET_RECVMSG_X)
+    {
+	std::cerr << ev->evt->tid << " recvmsg " << ev->evt->nparams << std::endl;
+        if (ev->evt->nparams == 4)
+        {
+		uint16_t* buf = (uint16_t*)((uint8_t*)ev->evt + sizeof(*ev->evt));
+
+		if (buf[3] == 0)
+		{
+			return SS_PLUGIN_SUCCESS;
+		}
+
+		socktuple* test = (socktuple*)(((uint8_t*)&buf[4]) + buf[0] + buf[1] + buf[2]);
+		if (test->type != 2)
+		{
+			return SS_PLUGIN_SUCCESS;
+		}
+		if (test->src.port == 53)
+		{
+			have_dns_packet(((uint8_t*)&buf[4]) + buf[0] + buf[1], buf[2]);
+		}
+		//std::cerr << "recvmsg" << std::endl;
+		//std::cerr << "Test sport:" << test->src.port << std::endl;
+		//std::cerr << "Test dport:" << test->dst.port << std::endl;
+	}	
+    }
+
     if (ev->evt->type == PPME_SOCKET_RECVFROM_X)
     {
-        std::cerr << "Found recvfrom" << std::endl;
-        if (ev->evt->nparams != 3)
+	std::cerr << ev->evt->tid << " recvfrom " << ev->evt->nparams << std::endl;
+        //std::cerr << "Found recvfrom " << ev->evt->nparams << std::endl;
+	//std::cerr << "Event pointer inside plugin:"  << ev->evt << std::endl;
+        if (ev->evt->nparams == 3)
         {
-            return SS_PLUGIN_SUCCESS;
-        }        
+		uint16_t* buf = (uint16_t*)((uint8_t*)ev->evt + sizeof(*ev->evt));
+		//std::cerr << "Type: " << ev->evt->type << std::endl;
+		//std::cerr << "Length: " << ev->evt->len << std::endl;
+		//std::cerr << "Length param 0: " << buf[0] << std::endl;
+		//std::cerr << "Length param 1: " << buf[1] << std::endl;
+		//std::cerr << "Length param 2: " << buf[2] << std::endl;
+		if (buf[2] == 0)
+		{
+			return SS_PLUGIN_SUCCESS;
+		}
+
+		uint8_t* sockbuf = (uint8_t*)(((uint8_t*)&buf[3]) + buf[0] + buf[1]);
+		/*std::cerr << "Payload addr:" << (void*)sockbuf << std::endl;
+		std::cerr << "Payload: " << +sockbuf[0] << std::endl;
+		std::cerr << "IP: " << +sockbuf[1] << "." << +sockbuf[2] << "." << +sockbuf[3] << "." << +sockbuf[4] << std::endl;
+		std::cerr << "Sport: " << *(uint16_t*)(sockbuf+5) << std::endl;
+		std::cerr << "Dport: " << *(uint16_t*)(sockbuf+11) << std::endl;*/
+
+		socktuple* test = (socktuple*)(((uint8_t*)&buf[3]) + buf[0] + buf[1]);
+		//std::cerr << "recvfrom" << std::endl;
+		//std::cerr << "Test sport:" << test->src.port << std::endl;
+		//std::cerr << "Test dport:" << test->dst.port << std::endl;
+		if (test->src.port == 53)
+		{
+			have_dns_packet(((uint8_t*)&buf[3]) + buf[0], buf[1]);
+		}
+		
+		//sinsp_evt_param *parinfo = ev->evt->get_param(0);
+		//std::cerr << "Param 0 value:" << (uint16_t)parinfo->m_val << std::endl;
+
+		//std::cerr << "Port: " << get_port(ev->evt->get_param(2)) << std::endl;
+
+		//thread_fdinfo_key_t key = { tid, fd };
+		//rc = in->table_reader.read_entry_field(ps->thread_fdinfo_table, &key, ps->thread_fdinfo_l4proto, &tmp);
+
+    		//std::cerr << "END PLUGIN" << std::endl;
+        	return SS_PLUGIN_SUCCESS;
+        }
     }
 
     return SS_PLUGIN_SUCCESS;

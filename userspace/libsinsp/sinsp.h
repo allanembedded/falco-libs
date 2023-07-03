@@ -76,6 +76,7 @@ limitations under the License.
 #include "user.h"
 #include "utils.h"
 #include "sinsp_resource_utilization.h"
+#include "fdinfo_table.h"
 
 #ifndef VISIBILITY_PRIVATE
 // Some code defines VISIBILITY_PRIVATE to nothing to get private access to sinsp
@@ -1119,6 +1120,7 @@ private:
 
 public:
 	sinsp_thread_manager* m_thread_manager;
+	thread_fdinfo_table* m_fdinfo_table;
 
 	sinsp_container_manager m_container_manager;
 

@@ -581,6 +581,7 @@ protected:
 	std::unordered_map<int64_t, ptr_t> m_threads;
 };
 
+
 ///////////////////////////////////////////////////////////////////////////////
 // This class manages the thread table
 ///////////////////////////////////////////////////////////////////////////////
@@ -748,84 +749,3 @@ private:
 	friend class sinsp_threadinfo;
 	friend class sinsp_baseliner;
 };
-
-struct thread_fdinfo_key_t
-{
-	uint64_t tid = 0;
-	uint64_t fd = 0;
-};
-
-class fdinfo_table_entry : public libsinsp::state::table_entry
-{
-public:
-	fdinfo_table_entry(std::shared_ptr<libsinsp::state::dynamic_struct::field_infos> dyn_fields = nullptr) : table_entry(dyn_fields), m_fdinfo(nullptr)
-	{
-		// Need this function for the fdinfo_table_entry().static_fields() call
-		// Madly unsafe
-		define_static_field(this, m_fdinfo->m_sockinfo.m_ipv4info.m_fields.m_l4proto, "l4proto");
-		define_static_field(this, m_fdinfo->m_sockinfo.m_ipv4info.m_fields.m_dport, "dport");
-	}
-
-	/*fdinfo_table_entry(sinsp_fdinfo_t* fdinfo, std::shared_ptr<libsinsp::state::dynamic_struct::field_infos> dyn_fields = nullptr) : table_entry(dyn_fields), m_fdinfo(*fdinfo)
-	{
-		define_static_field(this, m_fdinfo.m_sockinfo.m_ipv4info.m_fields.m_l4proto, "l4proto");
-		define_static_field(this, m_fdinfo.m_sockinfo.m_ipv4info.m_fields.m_dport, "dport");
-	}*/
-
-private:
-	sinsp_fdinfo_t* m_fdinfo;
-};
-
-/*
-class thread_fdinfo_table : public libsinsp::state::table<thread_fdinfo_key_t>
-{
-public:
-	thread_fdinfo_table(sinsp_thread_manager* threadmanager) : table("thread_fdinfo", fdinfo_table_entry().static_fields()), m_threadmanager(threadmanager)
-	{
-		
-	}
-
-	size_t entries_count() const override
-	{
-		// Not really correct but at least it's something to return
-		//return m_threadmanager.size();
-		return 1;
-	}
-
-	void clear_entries() override
-	{
-	}
-
-	//std::unique_ptr<libsinsp::state::table_entry> new_entry() const override;
-
-	bool foreach_entry(std::function<bool(libsinsp::state::table_entry& e)> pred) override
-	{
-		// Looping over all fds in all threads would be a bit much
-		return false;
-	}
-
-	std::shared_ptr<libsinsp::state::table_entry> get_entry(const thread_fdinfo_key_t& key) override
-	{
-		std::shared_ptr<sinsp_threadinfo> tinfo =  m_threadmanager->find_thread(key.tid, false);
-
-		if (tinfo != nullptr) {
-			sinsp_fdinfo_t *fdinfo = tinfo->get_fd(key.fd);
-
-			// Could be null
-			return std::shared_ptr<fdinfo_table_entry>(new fdinfo_table_entry(fdinfo));
-		}
-		return nullptr;
-	}
-
-	std::shared_ptr<libsinsp::state::table_entry> add_entry(const thread_fdinfo_key_t& key, std::unique_ptr<libsinsp::state::table_entry> entry) override
-	{
-		return nullptr;
-	}
-
-	bool erase_entry(const thread_fdinfo_key_t& key) override
-	{
-		return false;
-	}
-private:
-	sinsp_thread_manager* m_threadmanager;
-};*/

@@ -91,6 +91,7 @@ sinsp::sinsp(bool static_container, const std::string &static_id, const std::str
 	m_network_interfaces = NULL;
 	m_parser = new sinsp_parser(this);
 	m_thread_manager = new sinsp_thread_manager(this);
+	m_fdinfo_table = new thread_fdinfo_table(m_thread_manager);
 	m_max_fdtable_size = MAX_FD_TABLE_SIZE;
 	m_inactive_container_scan_time_ns = DEFAULT_INACTIVE_CONTAINER_SCAN_TIME_S * ONE_SECOND_IN_NS;
 	m_deleted_users_groups_scan_time_ns = DEFAULT_DELETED_USERS_GROUPS_SCAN_TIME_S * ONE_SECOND_IN_NS;
@@ -177,6 +178,7 @@ sinsp::sinsp(bool static_container, const std::string &static_id, const std::str
 	// create state tables registry
 	m_table_registry = std::make_shared<libsinsp::state::table_registry>();
 	m_table_registry->add_table(m_thread_manager);
+	m_table_registry->add_table(m_fdinfo_table);
 }
 
 sinsp::~sinsp()
@@ -192,6 +194,12 @@ sinsp::~sinsp()
 	{
 		delete m_parser;
 		m_parser = NULL;
+	}
+
+	if(m_fdinfo_table)
+	{
+		delete m_fdinfo_table;
+		m_fdinfo_table = NULL;
 	}
 
 	if(m_thread_manager)
@@ -1312,6 +1320,10 @@ int32_t sinsp::next(OUT sinsp_evt **puevt)
 			return res;
 		}
 	}
+	/*if (evt->m_pevt->type == PPME_SOCKET_RECVFROM_X) {
+		std::cerr << "In sinsp::next for recvfrom"  << evt->m_pevt << std::endl;
+	}*/
+
 
 	/* Here we shouldn't receive unknown events */
 	ASSERT(!libsinsp::events::is_unknown_event((ppm_event_code)evt->get_type()));
@@ -1486,6 +1498,9 @@ int32_t sinsp::next(OUT sinsp_evt **puevt)
 		return SCAP_TIMEOUT;
 	}
 #else
+	/*if (evt->m_pevt->type == PPME_SOCKET_RECVFROM_X) {
+		std::cerr << "Event pointer ahead of process_event:"  << evt->m_pevt << std::endl << std::flush;
+	}*/
 	m_parser->process_event(evt);
 #endif
 
@@ -1497,6 +1512,32 @@ int32_t sinsp::next(OUT sinsp_evt **puevt)
 	// the internal implementation of libsinsp.
 	for (auto& pp : m_plugin_parsers)
 	{
+                /*struct scap_sized_buffer params[PPM_MAX_EVENT_PARAMS] = {0};
+
+		if (evt->m_pevt->type == PPME_SOCKET_RECVFROM_X) {
+	                uint32_t nparams = scap_event_decode_params(evt->m_pevt, params);
+			std::cerr << "Event pointer for plugin:"  << evt->m_pevt << std::endl;
+			std::cerr << "Timestamp:"  << evt->m_pevt->ts << std::endl;
+			std::cerr << "Calling plugin parser with nparams " << evt->m_pevt->nparams << std::endl;
+			std::cerr << "Overall lenghth: " << evt->m_pevt->len << std::endl;
+			std::cerr << "Param 0: " << params[0].size << params[0].buf << std::endl;
+			std::cerr << "Param 1: " << params[1].size << params[1].buf << std::endl;
+			std::cerr << "Param 2: " << params[2].size << params[2].buf << std::endl;
+
+			std::cerr << "Result:" << *(uint64_t*)params[0].buf << std::endl;
+
+			char* sockbuf = (char*)params[2].buf;
+			std::cerr << "Payload: " << +sockbuf[0] << std::endl;
+			std::cerr << "IP: " << +sockbuf[1] << "." << +sockbuf[2] << "." << +sockbuf[3] << "." << +sockbuf[4] << std::endl;
+			std::cerr << "Port: " << +sockbuf[5] << " " << +sockbuf[6] << std::endl;
+
+			std::cerr << "IP: " << +sockbuf[7] << "." << +sockbuf[8] << "." << +sockbuf[9] << "." << +sockbuf[10] << std::endl;
+			std::cerr << "Port: " << +sockbuf[5] << " " << +sockbuf[6] << std::endl;
+			//std::cerr << "SPort: " << *(uint16_t*)((uint8_t*)params[2].buf + 5) << std::endl;
+			//std::cerr << "Payload: " << +((uint8_t*)params[2].buf)[0] << std::endl;
+			//std::cerr << "DPort: " << *(uint16_t*)((uint8_t*)params[2].buf + 11) << std::endl;
+			std::cerr << std::endl;
+		}*/
 		// todo(jason): should we log parsing errors here?
 		pp.process_event(evt, m_event_sources);
 	}
