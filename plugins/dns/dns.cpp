@@ -2,6 +2,7 @@
 #include <cstring>
 
 #include <engine/source_plugin/source_plugin_public.h>
+#include <ppm_events_public.h>
 
 typedef struct plugin_state
 {
@@ -61,6 +62,35 @@ const char* plugin_get_last_error(ss_plugin_t* s)
     return ((plugin_state *) s)->lasterr.c_str();
 }
 
+const char* plugin_get_parse_event_sources()
+{
+    return "[\"syscall\"]";
+}
+
+uint16_t* plugin_get_parse_event_types(uint32_t* num_types)
+{
+    static uint16_t types[] = {
+        PPME_SOCKET_RECVFROM_X,
+        PPME_SOCKET_RECVMSG_X
+    };
+    *num_types = sizeof(types) / sizeof(uint16_t);
+    return &types[0];
+}
+
+ss_plugin_rc plugin_parse_event(ss_plugin_t *s, const ss_plugin_event_input *ev, const ss_plugin_event_parse_input* in)
+{
+    if (ev->evt->type == PPME_SOCKET_RECVMSG_X)
+    {
+        // Process recvmsg
+    }
+    else if (ev->evt->type == PPME_SOCKET_RECVFROM_X)
+    {
+        //process recvfrom
+    }
+
+    return SS_PLUGIN_SUCCESS;
+}
+
 void get_plugin_api_sample_plugin_source(plugin_api& out)
 {
     memset(&out, 0, sizeof(plugin_api));
@@ -76,6 +106,11 @@ void get_plugin_api_sample_plugin_source(plugin_api& out)
     out.destroy = plugin_destroy;
 
     out.get_id = plugin_get_id;
+
+    /* Event parsing implementation */
+    out.get_parse_event_sources = plugin_get_parse_event_sources;
+    out.get_parse_event_types = plugin_get_parse_event_types;
+    out.parse_event = plugin_parse_event;
 }
 
 }
