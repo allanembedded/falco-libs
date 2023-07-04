@@ -143,12 +143,16 @@ void have_dns_packet(plugin_state *ps, uint64_t tid, uint8_t* buf, uint32_t len)
         while ((index < len) && (buf[index] != 0))
         {
             if (index + (unsigned int)(buf[index]) > len)
-                    break;
+                break;
 
             domain.append((const char*)&buf[index+1], (size_t)buf[index]);
 
-            domain.append(".");
             index += buf[index]+1;
+
+            if (index < len && buf[index] != 0)
+            {
+                domain.append(".");
+            }
         }
 
         if (domain.size() > 0 && ps->handler)
