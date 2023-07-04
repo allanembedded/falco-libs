@@ -13,6 +13,8 @@ typedef struct plugin_state
     uint8_t async_evt_buf[2048] = {0};
     ss_plugin_event* async_evt = nullptr;
     ss_plugin_owner_t* owner;
+    std::string strstorage;
+    const char* strptrstorage;
 } plugin_state;
 
 extern "C"
@@ -250,7 +252,6 @@ const char* plugin_get_async_events()
 ss_plugin_rc plugin_set_async_event_handler(ss_plugin_t* s, ss_plugin_owner_t* owner, const ss_plugin_async_event_handler_t handler)
 {
     plugin_state *ps = (plugin_state *) s;
-    std::cerr << "Called plugin_set_async_event_handler" << std::endl;
 
     // Note plugin_set_async_event_handler is called with handler = NULL on close
     if (handler)
@@ -259,6 +260,67 @@ ss_plugin_rc plugin_set_async_event_handler(ss_plugin_t* s, ss_plugin_owner_t* o
         ps->owner = owner;
     }
 
+    return SS_PLUGIN_SUCCESS;
+}
+
+uint16_t* plugin_get_extract_event_types(uint32_t* num_types)
+{
+    static uint16_t types[] = {
+        PPME_ASYNCEVENT_E, // used for catching async events
+    };
+    *num_types = sizeof(types) / sizeof(uint16_t);
+    return &types[0];
+}
+
+const char* plugin_get_fields()
+{
+    return
+    "[" \
+        "{\"type\": \"string\", \"name\": \"dns.query\", \"desc\": \"The domain being looked up\"}" \
+    "]";
+}
+
+const char* plugin_get_extract_event_sources()
+{
+    return "[\"syscall\"]";
+}
+
+static inline const char* get_async_event_name(const ss_plugin_event* e)
+{
+    return (const char*) ((uint8_t*) e + sizeof(ss_plugin_event) + 4+4+4+4);
+}
+
+ss_plugin_rc plugin_extract_fields(ss_plugin_t *s, const ss_plugin_event_input *ev, const ss_plugin_field_extract_input* in)
+{
+    plugin_state *ps = (plugin_state *) s;
+
+    for (uint32_t i = 0; i < in->num_fields; i++)
+    {
+        switch(in->fields[i].field_id)
+        {
+            case 0:
+                if (ev->evt->type == PPME_ASYNCEVENT_E && strcmp("dns", get_async_event_name(ev->evt)) == 0)
+                {
+                    if (ev->evt->nparams == 3)
+                    {
+                        // Calculate offset based on format generated in
+                        // encode_async_event()
+                        uint32_t* buf = (uint32_t*)((uint8_t*)ev->evt + sizeof(*ev->evt));
+                        uint8_t* cbuf = ((uint8_t*)&buf[3]) + buf[0] + buf[1];
+
+                        ps->strstorage = std::string((char*)cbuf);
+                        ps->strptrstorage = ps->strstorage.c_str();
+
+                        in->fields[i].res.str = &ps->strptrstorage;
+                        in->fields[i].res_len = 1;
+                    }
+                }
+            break;
+            default:
+                in->fields[i].res_len = 0;
+                return SS_PLUGIN_FAILURE;
+        }
+    }
     return SS_PLUGIN_SUCCESS;
 }
 
@@ -283,8 +345,15 @@ void get_plugin_api_sample_plugin_source(plugin_api& out)
     out.get_parse_event_types = plugin_get_parse_event_types;
     out.parse_event = plugin_parse_event;
 
+    /* Async event generation */
     out.get_async_events = plugin_get_async_events;
     out.set_async_event_handler = plugin_set_async_event_handler;
+
+    /* Extraction */
+    out.get_fields = plugin_get_fields;
+    out.get_extract_event_sources = plugin_get_extract_event_sources;
+    out.get_extract_event_types = plugin_get_extract_event_types;
+    out.extract_fields = plugin_extract_fields;
 }
 
 }
